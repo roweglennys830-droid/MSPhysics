@@ -19,32 +19,29 @@
     #endif
 #endif
 
-#if (defined (_WIN_32_VER) || defined (_WIN_64_VER))
-    #include <intrin.h>
-    #include <emmintrin.h>
-#endif
-
-#ifdef _MACOSX_VER
-    #include <unistd.h>
-    #include <sys/sysctl.h>
-    #include <assert.h>
-    #if (defined __i386__ || defined __x86_64__)
-        #include <fenv.h>
-        #include <pmmintrin.h>
-        #include <emmintrin.h> // sse3
-        #include <mmintrin.h>
-        #ifdef __SSE4_1__
-            #include <smmintrin.h>
-        #endif
-    #endif
-#endif
-
 // Visual Studio CRT Config
 
 // Must disable the min/max macros defined by windows.h to avoid conflict with
 // std::max and std:min. Ruby includes windows.h so it must be disabled here.
-// http://stackoverflow.com/a/2789509/486990
 #define NOMINMAX
+
+// Patch for modern MSVC / VS2022.
+// Old bundled Ruby headers declare isnan / finite / isfinite in ways that
+// conflict with modern MSVC <cmath>. These HAVE_* flags tell Ruby headers
+// these functions already exist and should not be redeclared.
+#ifdef _MSC_VER
+    #ifndef HAVE_FINITE
+        #define HAVE_FINITE 1
+    #endif
+
+    #ifndef HAVE_ISNAN
+        #define HAVE_ISNAN 1
+    #endif
+
+    #ifndef HAVE_ISFINITE
+        #define HAVE_ISFINITE 1
+    #endif
+#endif
 
 // Ruby in SketchUp was configured with /MD and the headers reflect that.
 // And from Ruby version to Ruby version the configuration needs to be slightly
@@ -86,18 +83,36 @@
     #include <Winsock2.h>
 #endif
 
+#ifdef __cplusplus
+extern "C" {
+#endif
+
 #include <ruby.h>
 #ifdef HAVE_RUBY_ENCODING_H
     #include <ruby/encoding.h>
 #endif
 
-// Compatibility Macros
+#ifdef __cplusplus
+}
+#endif
 
-/* The structures changes between Ruby 1.8 and 2.0 so the access to the
- * properties are different. There are new macros in Ruby 2.0 that should be
- * used instead. In order to make the code compile for both we need to add
- * matching macros for 1.8.
- */
+// Patch for modern MSVC / VS2022.
+// Ruby win32 headers may define these as macros, which can break <cmath>.
+#ifdef _MSC_VER
+    #ifdef isnan
+        #undef isnan
+    #endif
+
+    #ifdef isfinite
+        #undef isfinite
+    #endif
+
+    #ifdef finite
+        #undef finite
+    #endif
+#endif
+
+// Compatibility Macros
 
 #ifndef RARRAY_PTR
     #define RARRAY_PTR(s) (RARRAY(s)->ptr)
@@ -127,25 +142,9 @@
     #endif
 #endif
 
-
-/*
- * Need to be very careful about how these macros are defined, especially
- * when compiling C++ code or C code with an ANSI C compiler.
- *
- * VALUEFUNC(f) is a macro used to typecast a C function that implements
- * a Ruby method so that it can be passed as an argument to API functions
- * like rb_define_method() and rb_define_singleton_method().
- *
- * VOIDFUNC(f) is a macro used to typecast a C function that implements
- * either the "mark" or "free" stuff for a Ruby Data object, so that it
- * can be passed as an argument to API functions like Data_Wrap_Struct()
- * and Data_Make_Struct().
- */
-
 #define INTFUNC(f) ((int (*)(ANYARGS)) f)
 #define VALUEFUNC(f) ((VALUE (*)(ANYARGS)) f)
 #define VOIDFUNC(f)  ((RUBY_DATA_FUNC) f)
-
 
 // Ruby 1.8 headers conflict with ostream because it defined a lot of macros
 // that completely mess up the environment.
@@ -186,7 +185,6 @@
 #ifdef utime
     #undef utime
 #endif
-
 
 #ifdef close
     #undef close
